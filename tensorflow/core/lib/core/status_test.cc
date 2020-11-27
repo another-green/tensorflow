@@ -15,6 +15,7 @@ limitations under the License.
 
 #include "tensorflow/core/lib/core/status.h"
 
+#include "absl/strings/match.h"
 #include "tensorflow/core/lib/core/errors.h"
 #include "tensorflow/core/lib/core/status_test_util.h"
 #include "tensorflow/core/platform/test.h"
@@ -55,6 +56,19 @@ TEST(Status, Assign) {
   Status b;
   b = a;
   ASSERT_EQ(a.ToString(), b.ToString());
+}
+
+TEST(Status, Move) {
+  Status a(errors::InvalidArgument("Invalid"));
+  Status b(std::move(a));
+  ASSERT_EQ("Invalid argument: Invalid", b.ToString());
+}
+
+TEST(Status, MoveAssign) {
+  Status a(errors::InvalidArgument("Invalid"));
+  Status b;
+  b = std::move(a);
+  ASSERT_EQ("Invalid argument: Invalid", b.ToString());
 }
 
 TEST(Status, Update) {
@@ -159,6 +173,33 @@ TEST(StatusGroup, AggregateWithMultipleErrorStatus) {
                                 cancelled.error_message()));
   ASSERT_TRUE(absl::StrContains(concat_status.error_message(),
                                 aborted.error_message()));
+}
+
+TEST(Status, InvalidPayloadGetsIgnored) {
+  Status s = Status();
+  s.SetPayload("Invalid", "Invalid Val");
+  ASSERT_EQ(s.GetPayload("Invalid"), tensorflow::StringPiece());
+  bool is_err_erased = s.ErasePayload("Invalid");
+  ASSERT_EQ(is_err_erased, false);
+}
+
+TEST(Status, SetPayloadSetsOrUpdatesIt) {
+  Status s(error::INTERNAL, "Error message");
+  s.SetPayload("Error key", "Original");
+  ASSERT_EQ(s.GetPayload("Error key"), tensorflow::StringPiece("Original"));
+  s.SetPayload("Error key", "Updated");
+  ASSERT_EQ(s.GetPayload("Error key"), tensorflow::StringPiece("Updated"));
+}
+
+TEST(Status, ErasePayloadRemovesIt) {
+  Status s(error::INTERNAL, "Error message");
+  s.SetPayload("Error key", "Original");
+
+  bool is_err_erased = s.ErasePayload("Error key");
+  ASSERT_EQ(is_err_erased, true);
+  is_err_erased = s.ErasePayload("Error key");
+  ASSERT_EQ(is_err_erased, false);
+  ASSERT_EQ(s.GetPayload("Error key"), tensorflow::StringPiece());
 }
 
 static void BM_TF_CHECK_OK(int iters) {
